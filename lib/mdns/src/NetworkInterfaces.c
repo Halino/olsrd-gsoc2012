@@ -171,6 +171,99 @@ CreateCaptureSocket(const char *ifName)
   return skfd;
 }                               /* CreateCaptureSocket */
 
+
+/* -------------------------------------------------------------------------
+ * Function   : CreateRotuerElectionSocket
+ * Description: Create socket for capturing router election hello packets
+ * Input      : ifname - network interface (e.g. "eth0")
+ * Output     : none
+ * Return     : the socket descriptor ( >= 0), or -1 if an error occurred
+ * Data Used  : none
+ * Notes      : The socket is a cooked IP packet socket, bound to the specified
+ *              network interface
+ * ------------------------------------------------------------------------- */
+static int
+CreateRouterElectionSocket(const char *ifName)
+{
+  int ifIndex = if_nametoindex(ifName);
+  struct packet_mreq mreq;
+  struct ifreq req;
+  struct sockaddr_ll bindTo;
+  struct ip_mreq
+  {
+    struct in_addr imr_multiaddr; /* IP multicast address of group */
+    struct in_addr imr_interface; /* local IP address of interface */
+  }
+  int skfd = 0;
+  /* Open cooked IP packet socket */
+  if (olsr_cnf->ip_version == AF_INET) {
+    skfd = socket(AF_INET, SOCK_DGRAM, htons(ETH_P_IP));
+  } else {
+    skfd = socket(AF_INET6, SOCK_DGRAM, htons(ETH_P_IPV6));
+  }
+  if (skfd < 0) {
+    BmfPError("socket(AF_INET\INET6_ERROR) error");
+    return -1;
+  }
+
+  /* Get hardware (MAC) address */
+  memset(&req, 0, sizeof(struct ifreq));
+  strncpy(req.ifr_name, ifName, IFNAMSIZ - 1);
+  req.ifr_name[IFNAMSIZ - 1] = '\0';    /* Ensures null termination */
+  if (ioctl(skfd, SIOCGIFHWADDR, &req) < 0) {
+    BmfPError("error retrieving MAC address");
+    close(skfd);
+    return -1;
+  }
+
+  if (olsr_cnf->ip_version == AF_INET) {	/* Preparing socket for IPV4 operating mode */
+    setsockopt(skfd, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, 0, 1);
+  
+    struct in_addr interface_addr;
+    ioctl(skfd, SIOCGIFADDR, &req);
+    interface_addr = req->ifr_addr->sin_addr;
+    setsockopt(skfd, IPPROTO_IP, IP_MULTICAST_IF, &interface_addr, sizeof(interface_addr));
+    
+    struct ip_mreq mreq;
+    mreq->imr_interface = interface_addr;
+    mreq->imr_multiaddr.s_addr = inet_addr("224.0.0.2");
+    setsockopt(skfd, IPRPOTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    
+  }
+  else{	/* Preparing socket for IPV6 operating mode */
+  
+  }
+
+  /* Bind the socket to the specified interface */
+  memset(&bindTo, 0, sizeof(bindTo));
+  bindTo.sll_family = AF_PACKET;
+  if (olsr_cnf->ip_version == AF_INET) {
+    bindTo.sll_protocol = htons(ETH_P_IP);
+  } else {
+    bindTo.sll_protocol = htons(ETH_P_IPV6);
+  }
+  bindTo.sll_ifindex = ifIndex;
+  memcpy(bindTo.sll_addr, req.ifr_hwaddr.sa_data, IFHWADDRLEN);
+  bindTo.sll_halen = IFHWADDRLEN;
+
+  if (bind(skfd, (struct sockaddr *)&bindTo, sizeof(bindTo)) < 0) {
+    BmfPError("bind() error");
+    close(skfd);
+    return -1;
+  }
+
+  /* Set socket to blocking operation */
+  if (fcntl(skfd, F_SETFL, fcntl(skfd, F_GETFL, 0) & ~O_NONBLOCK) < 0) {
+    BmfPError("fcntl() error");
+    close(skfd);
+    return -1;
+  }
+  //AddDescriptorToInputSet(skfd);
+  add_olsr_socket(skfd, &DoElection,NULL, NULL, SP_PR_READ);
+
+  return skfd;
+}                               /* CreateRouterElectionSocket */
+
 /* -------------------------------------------------------------------------
  * Function   : CreateInterface
  * Description: Create a new TBmfInterface object and adds it to the global
@@ -191,6 +284,7 @@ CreateInterface(const char *ifName, struct interface *olsrIntf)
   int capturingSkfd = -1;
   int encapsulatingSkfd = -1;
   int listeningSkfd = -1;
+  int electionSkfd = -1;
   int ioctlSkfd;
   struct ifreq ifr;
   int nOpened = 0;
@@ -208,8 +302,13 @@ CreateInterface(const char *ifName, struct interface *olsrIntf)
    * non-OLSR interfaces, and on OLSR-interfaces if configured. */
   if ((olsrIntf == NULL)) {
     capturingSkfd = CreateCaptureSocket(ifName);
-    if (capturingSkfd < 0) {
+    electionSkfd = CreateRouterElectionSocket(ifName);
+    if (capturingSkfd < 0 || electionSkfd < 0) {
       close(encapsulatingSkfd);
+      if (capturingSkfd > 0)
+      	close(capturingSkfd);
+      if (electionSkfd > 0)
+      	close(electionSkfd);
       free(newIf);
       return 0;
     }
@@ -229,6 +328,7 @@ CreateInterface(const char *ifName, struct interface *olsrIntf)
     BmfPError("ioctl(SIOCGIFHWADDR) error for interface \"%s\"", ifName);
     close(capturingSkfd);
     close(encapsulatingSkfd);
+    close(electionSkfd);
     free(newIf);
     return 0;
   }
@@ -237,6 +337,7 @@ CreateInterface(const char *ifName, struct interface *olsrIntf)
   newIf->capturingSkfd = capturingSkfd;
   newIf->encapsulatingSkfd = encapsulatingSkfd;
   newIf->listeningSkfd = listeningSkfd;
+  newIf->electionSkfd = electionSkfd;
   memcpy(newIf->macAddr, ifr.ifr_hwaddr.sa_data, IFHWADDRLEN);
   memcpy(newIf->ifName, ifName, IFNAMSIZ);
   newIf->olsrIntf = olsrIntf;
@@ -473,6 +574,10 @@ CloseBmfNetworkInterfaces(void)
       close(bmfIf->encapsulatingSkfd);
       nClosed++;
     }
+    if (bmfIf->electionSkfd >= 0) {
+      close(bmfIf->electionSkfd);
+      nClosed++;
+    }
     //OLSR_PRINTF(
     //  7,
     //  "%s: %s interface \"%s\": RX pkts %u (%u dups); TX pkts %u\n",
@@ -544,34 +649,34 @@ AddNonOlsrBmfIf(const char *ifName, void *data __attribute__ ((unused)), set_plu
   return 0;
 }                               /* AddNonOlsrBmfIf */
 
-// int
-// AddFilteredHost(const char *host, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
-// {
-//  struct FilteredHosts *hostToAdd;
-//  
-// assert(host!= NULL);
-//
-//  hostToAdd = olsr_malloc(sizeof(struct FilteredHosts), "text"); //TODO: what is "text", some debug ?
-//  
-//  
-// if (olsr_cnf->ip_version == AF_INET) { //IPv4
-//
-//  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v4);
-//
-//  }
-//  else { //IPv6
-//
-//  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v6);
-//
-//  }
-//
-//  listbackport_add_tail(&ListOfFilteredHosts,&(hostToAdd->list));
-//  
-//
-//  return 0;
-// }                               /* AddFilteredHost */
+ int
+ AddFilteredHost(const char *host, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
+ {
+  struct FilteredHosts *hostToAdd;
+  
+ assert(host!= NULL);
 
-int
+  hostToAdd = olsr_malloc(sizeof(struct FilteredHosts), "text"); //TODO: what is "text", some debug ?
+  
+  
+ if (olsr_cnf->ip_version == AF_INET) { //IPv4
+
+  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v4);
+
+  }
+  else { //IPv6
+
+  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v6);
+
+  }
+
+  listbackport_add_tail(&ListOfFilteredHosts,&(hostToAdd->list));
+  
+
+  return 0;
+ }                               /* AddFilteredHost */
+
+ int
 set_TTL_Check(const char *TTL_Check, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
 {
   assert(TTL_Check!= NULL);

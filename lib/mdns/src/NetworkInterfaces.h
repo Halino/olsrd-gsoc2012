@@ -68,6 +68,10 @@ struct TBmfInterface {
    * Used only when PlParam "BmfMechanism" is set to "UnicastPromiscuous". */
   int listeningSkfd;
 
+  /* File descriptor of UDP packet socket, used for listening router election hello
+   * packets */
+  int electionSkfd;
+
   unsigned char macAddr[IFHWADDRLEN];
 
   char ifName[IFNAMSIZ];
@@ -146,7 +150,7 @@ int CreateBmfNetworkInterfaces(struct interface *skipThisIntf);
 void AddInterface(struct interface *newIntf);
 void CloseBmfNetworkInterfaces(void);
 int AddNonOlsrBmfIf(const char *ifName, void *data, set_plugin_parameter_addon addon);
-//int AddFilteredHost(const char *host, void *data, set_plugin_parameter_addon addon);
+int AddFilteredHost(const char *host, void *data, set_plugin_parameter_addon addon);
 int set_TTL_Check(const char *TTL_Check, void *data, set_plugin_parameter_addon addon);
 int set_MDNS_TTL(const char *MDNS_TTL, void *data, set_plugin_parameter_addon addon);
 int IsNonOlsrBmfIf(const char *ifName);

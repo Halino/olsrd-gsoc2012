@@ -74,9 +74,9 @@
 #include "Packet.h"             /* ENCAP_HDR_LEN, BMF_ENCAP_TYPE, BMF_ENCAP_LEN etc. */
 #include "list_backport.h"
 
-//#define OLSR_FOR_ALL_FILTEREDNODES_ENTRIES(n, iterator) list_for_each_element_safe(&ListOfFilteredHosts, n, list, iterator)
+#define OLSR_FOR_ALL_FILTEREDNODES_ENTRIES(n, iterator) list_for_each_element_safe(&ListOfFilteredHosts, n, list, iterator)
 
-//extern struct list_entity ListOfFilteredHosts;
+struct list_entity ListOfFilteredHosts;
 
 /* -------------------------------------------------------------------------
  * Function   : PacketReceivedFromOLSR
@@ -318,14 +318,14 @@ MainAddressOf(union olsr_ip_addr *ip)
 }                               /* MainAddressOf */
 
 
-//static int
-//isInFilteredList(union olsr_ip_addr *ip) {
-//
-//	//TODO: implement here check if IP is in filtered list
-//
-//return 1;
-//
-//}
+static int
+isInFilteredList(union olsr_ip_addr *ip) {
+
+	//TODO: implement here check if IP is in filtered list
+
+return 1;
+
+}
 
 
 /* -------------------------------------------------------------------------
@@ -382,10 +382,10 @@ BmfPacketCaptured(
 	if(((u_int8_t) ipHeader->ip_ttl) <= ((u_int8_t) 1))    // Discard mdns packet with TTL limit 1 or less
       		return;
 
-//    if (isInFilteredList(&src)) {
-//
-//	return;
-//    }
+    if (isInFilteredList(&src)) {
+
+	return;
+    }
 
   }                             //END IPV4
 
@@ -415,10 +415,10 @@ BmfPacketCaptured(
     	if(((uint8_t) ipHeader6->ip6_hops) <= ((uint8_t) 1))  // Discard mdns packet with hop limit 1 or less
     		return;
     
-//    if (isInFilteredList(&src)) {
-//    
-//    return;
-//    }
+    if (isInFilteredList(&src)) {
+    
+    return;
+    }
 
   }                             //END IPV6
   else
@@ -499,7 +499,7 @@ int
 InitMDNS(struct interface *skipThisIntf)
 {
    
-//  listbackport_init_head(&ListOfFilteredHosts);
+  listbackport_init_head(&ListOfFilteredHosts);
 
   //Tells OLSR to launch olsr_parser when the packets for this plugin arrive
   olsr_parser_add_function(&olsr_parser, PARSER_TYPE);
