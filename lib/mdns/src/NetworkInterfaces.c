@@ -192,6 +192,7 @@ CreateRouterElectionSocket(const char *ifName)
   struct ip_mreq  mreq;
   struct in_addr ipv4_addr;
   int skfd = 0;
+  int on;
 
   /* Open IP packet socket */
   if (olsr_cnf->ip_version == AF_INET) {
@@ -232,10 +233,11 @@ CreateRouterElectionSocket(const char *ifName)
      close(skfd);
      return -1;
     }
-
   } else {
     memset(&bindTo6, 0, sizeof(bindTo6));
-    bindTo6.sin6_addr.s6_addr = ((struct sockaddr_in6 *)&req.ifr_addr)->sin6_addr.s6_addr;
+    on = 1;
+    setsockopt(skfd, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on)); 
+    memcpy(&bindTo6.sin6_addr, &((struct sockaddr_in6 *)&req.ifr_addr)->sin6_addr, sizeof(struct in6_addr));
     bindTo6.sin6_family = AF_INET6;
     bindTo6.sin6_port = htons(5354);
     if (bind(skfd, (struct sockaddr *)&bindTo6, sizeof(bindTo6)) < 0) {
@@ -246,7 +248,7 @@ CreateRouterElectionSocket(const char *ifName)
   }
   
   //AddDescriptorToInputSet(skfd);
-  add_olsr_socket(skfd, &DoElection,NULL, NULL, SP_PR_READ);
+//  add_olsr_socket(skfd, &DoElection,NULL, NULL, SP_PR_READ);
 
   return skfd;
 }                               /* CreateRouterElectionSocket */
