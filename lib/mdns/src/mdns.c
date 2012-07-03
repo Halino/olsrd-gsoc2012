@@ -560,12 +560,14 @@ void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flag
 
   if (rcvPkt->ipFamily == AF_INET){
     if(ParseElectionPacket(rcvPkt, &listEntry)){
+    (void) UpdateRouterList(&listEntry);
     }
     else
      return;					//packet not valid
   }
   else{
     if(ParseElectionPacket6(rcvPkt, &listEntry6)){
+    (void) UpdateRouterList6(&listEntry6);
     }
     else
       return;					//packet not valid
