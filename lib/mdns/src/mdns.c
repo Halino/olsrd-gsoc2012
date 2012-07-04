@@ -74,11 +74,9 @@
 #include "Packet.h"             /* ENCAP_HDR_LEN, BMF_ENCAP_TYPE, BMF_ENCAP_LEN etc. */
 #include "list_backport.h"
 
-#define OLSR_FOR_ALL_FILTEREDNODES_ENTRIES(n, iterator) list_for_each_element_safe(&ListOfFilteredHosts, n, list, iterator)
+//#define OLSR_FOR_ALL_FILTEREDNODES_ENTRIES(n, iterator) list_for_each_element_safe(&ListOfFilteredHosts, n, list, iterator)
 
-int my_DNS_TTL=0;
-
-extern struct list_entity ListOfFilteredHosts;
+//extern struct list_entity ListOfFilteredHosts;
 
 /* -------------------------------------------------------------------------
  * Function   : PacketReceivedFromOLSR
@@ -117,12 +115,14 @@ PacketReceivedFromOLSR(unsigned char *encapsulationUdpData, int len)
       if ((encapsulationUdpData[0] & 0xf0) == 0x40) {
         dest.sll_protocol = htons(ETH_P_IP);
 	stripped_len = ntohs(ipHeader->ip_len);
-	ipHeader->ip_ttl = (u_int8_t) 1; //setting up TTL to 1 to avoid mdns packets flood 
+	if(my_TTL_Check)
+		ipHeader->ip_ttl = (u_int8_t) 1; //setting up TTL to 1 to avoid mdns packets flood 
 	}
       if ((encapsulationUdpData[0] & 0xf0) == 0x60) {
         dest.sll_protocol = htons(ETH_P_IPV6);
         stripped_len = 40 + ntohs(ip6Header->ip6_plen); //IPv6 Header size (40) + payload_len 
-        ip6Header->ip6_hops = (uint8_t) 1; //setting up Hop Limit to 1 to avoid mdns packets flood
+        if(my_TTL_Check)
+		ip6Header->ip6_hops = (uint8_t) 1; //setting up Hop Limit to 1 to avoid mdns packets flood
         }
       // Sven-Ola: Don't know how to handle the "stripped_len is uninitialized" condition, maybe exit(1) is better...?
       if (0 == stripped_len) return;
@@ -318,14 +318,14 @@ MainAddressOf(union olsr_ip_addr *ip)
 }                               /* MainAddressOf */
 
 
-static int
-isInFilteredList(union olsr_ip_addr *ip) {
-
-	//TODO: implement here check if IP is in filtered list
-
-return 1;
-
-}
+//static int
+//isInFilteredList(union olsr_ip_addr *ip) {
+//
+//	//TODO: implement here check if IP is in filtered list
+//
+//return 1;
+//
+//}
 
 
 /* -------------------------------------------------------------------------
@@ -378,13 +378,14 @@ BmfPacketCaptured(
     if (destPort != 5353) {
       return;
     }
-    if(((u_int8_t) ipHeader->ip_ttl) <= ((u_int8_t) 1))    // Discard mdns packet with TTL limit 1 or less
-      return;
+    if(my_TTL_Check)
+	if(((u_int8_t) ipHeader->ip_ttl) <= ((u_int8_t) 1))    // Discard mdns packet with TTL limit 1 or less
+      		return;
 
-    if (isInFilteredList(&src)) {
-
-	return;
-    }
+//    if (isInFilteredList(&src)) {
+//
+//	return;
+//    }
 
   }                             //END IPV4
 
@@ -410,14 +411,14 @@ BmfPacketCaptured(
     if (destPort != 5353) {
       return;
     }
+    if(my_TTL_Check)
+    	if(((uint8_t) ipHeader6->ip6_hops) <= ((uint8_t) 1))  // Discard mdns packet with hop limit 1 or less
+    		return;
     
-    if(((uint8_t) ipHeader6->ip6_hops) <= ((uint8_t) 1))  // Discard mdns packet with hop limit 1 or less
-      return;
-    
-    if (isInFilteredList(&src)) {
-    
-    return;
-    }
+//    if (isInFilteredList(&src)) {
+//    
+//    return;
+//    }
 
   }                             //END IPV6
   else
@@ -498,7 +499,7 @@ int
 InitMDNS(struct interface *skipThisIntf)
 {
    
-  listbackport_init_head(&ListOfFilteredHosts);
+//  listbackport_init_head(&ListOfFilteredHosts);
 
   //Tells OLSR to launch olsr_parser when the packets for this plugin arrive
   olsr_parser_add_function(&olsr_parser, PARSER_TYPE);

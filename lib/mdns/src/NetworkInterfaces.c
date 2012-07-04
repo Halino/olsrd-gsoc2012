@@ -60,6 +60,7 @@
 #include <netinet/ip.h>         /* struct ip */
 #include <netinet/udp.h>        /* SOL_UDP */
 #include <stdlib.h>             /* atoi, malloc */
+#include <strings.h>		/* strcasecmp */
 
 /* OLSRD includes */
 #include "olsr.h"               /* OLSR_PRINTF() */
@@ -77,6 +78,7 @@
 #include "Address.h"            /* IsMulticast() */
 
 int my_MDNS_TTL = 0;
+int my_TTL_Check = 1;
 
 /* List of network interface objects used by BMF plugin */
 struct TBmfInterface *BmfInterfaces = NULL;
@@ -542,32 +544,40 @@ AddNonOlsrBmfIf(const char *ifName, void *data __attribute__ ((unused)), set_plu
   return 0;
 }                               /* AddNonOlsrBmfIf */
 
+// int
+// AddFilteredHost(const char *host, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
+// {
+//  struct FilteredHosts *hostToAdd;
+//  
+// assert(host!= NULL);
+//
+//  hostToAdd = olsr_malloc(sizeof(struct FilteredHosts), "text"); //TODO: what is "text", some debug ?
+//  
+//  
+// if (olsr_cnf->ip_version == AF_INET) { //IPv4
+//
+//  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v4);
+//
+//  }
+//  else { //IPv6
+//
+//  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v6);
+//
+//  }
+//
+//  listbackport_add_tail(&ListOfFilteredHosts,&(hostToAdd->list));
+//  
+//
+//  return 0;
+// }                               /* AddFilteredHost */
+
 int
-AddFilteredHost(const char *host, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
+set_TTL_Check(const char *TTL_Check, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
 {
-  struct FilteredHosts *hostToAdd;
-  
-assert(host!= NULL);
-
-  hostToAdd = olsr_malloc(sizeof(struct FilteredHosts), "text"); //TODO: what is "text", some debug ?
-  
-  
-if (olsr_cnf->ip_version == AF_INET) { //IPv4
-
-  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v4);
-
-  }
-  else { //IPv6
-
-  inet_pton(olsr_cnf->ip_version,host,&hostToAdd->ipaddr.v6);
-
-  }
-
-  listbackport_add_tail(&ListOfFilteredHosts,&(hostToAdd->list));
-  
-
+  assert(TTL_Check!= NULL);
+  set_plugin_boolean(TTL_Check, &my_TTL_Check, addon);
   return 0;
-}                               /* AddFilteredHost */
+}	/* Set TTL Check */    
 
 int
 set_MDNS_TTL(const char *MDNS_TTL, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))

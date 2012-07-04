@@ -68,7 +68,7 @@
 /* Forward declaration of OLSR interface type */
 struct interface;
 
-extern struct list_entity ListOfFilteredHosts;
+//extern struct list_entity ListOfFilteredHosts;
 
 //extern int FanOutLimit;
 //extern int BroadcastRetransmitCount;
