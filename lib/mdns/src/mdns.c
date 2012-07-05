@@ -143,6 +143,9 @@ PacketReceivedFromOLSR(unsigned char *encapsulationUdpData, int len)
        * in that case. */
       memset(dest.sll_addr, 0xFF, IFHWADDRLEN);
       
+      if(ISMASTER != 1)             //Don't forward packet if isn't master router
+        return;
+
       nBytesWritten = sendto(walker->capturingSkfd, encapsulationUdpData, stripped_len, 0, (struct sockaddr *)&dest, sizeof(dest));
       if (nBytesWritten != stripped_len) {
         BmfPError("sendto() error forwarding unpacked encapsulated pkt on \"%s\"", walker->ifName);
@@ -427,6 +430,9 @@ BmfPacketCaptured(
 
   /* Check if the frame is captured on an OLSR-enabled interface */
   //isFromOlsrIntf = (intf->olsrIntf != NULL); TODO: put again this check
+
+  if(ISMASTER != 1)		//Don't forward packet if isn't master router
+    return;
 
   // send the packet to OLSR forward mechanism
   olsr_mdns_gen(encapsulationUdpData, nBytes);

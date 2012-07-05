@@ -740,6 +740,10 @@ CloseBmfNetworkInterfaces(void)
       close(bmfIf->electionSkfd);
       nClosed++;
     }
+    if (bmfIf->helloSkfd >= 0) {
+      close(bmfIf->helloSkfd);
+      nClosed++;
+    }
     //OLSR_PRINTF(
     //  7,
     //  "%s: %s interface \"%s\": RX pkts %u (%u dups); TX pkts %u\n",
