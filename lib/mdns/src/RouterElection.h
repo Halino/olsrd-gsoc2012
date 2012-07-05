@@ -26,8 +26,9 @@ struct RouterListEntry6{
   struct list_entity list;
 };
 
-extern int ISMASTER = 1;
+extern int ISMASTER;
 int UpdateRouterList (struct RouterListEntry *listEntry);	//update router list
 int UpdateRouterList6 (struct RouterListEntry6 *listEntry6);
 int ParseElectionPacket (struct RtElHelloPkt *rcvPkt, struct RouterListEntry *listEntry);	//used to parse a received packet into
 int ParseElectionPacket6 (struct RtElHelloPkt *rcvPkt, struct RouterListEntry6 *listEntry6);	//a list entry for ipv4/ipv6
+int InitRouterList ();
