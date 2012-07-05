@@ -512,6 +512,7 @@ InitMDNS(struct interface *skipThisIntf)
   olsr_parser_add_function(&olsr_parser, PARSER_TYPE);
   //Creates captures sockets and register them to the OLSR scheduler
   CreateBmfNetworkInterfaces(skipThisIntf);
+  InitRouterList();
 
   return 1;
 }                               /* InitMDNS */
