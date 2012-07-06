@@ -35,6 +35,7 @@
 #include "mdns.h"
 
 int ENTRYTTL = 120;
+ISMASTER = 1;
 struct list_entity ROUTER_ID;
 struct list_entity ROUTER_ID6;
 #define ROUTER_ID_ENTRIES(n, iterator) listbackport_for_each_element_safe(&ROUTER_ID, n, list, iterator)
@@ -138,6 +139,7 @@ void electTimer (void *x __attribute__ ((unused))){
     }
   }
 
+ return;
 }
 
 int InitRouterList(){
@@ -145,14 +147,13 @@ int InitRouterList(){
   struct RouterListEntry *selfEntry;
   struct RouterListEntry6 *selfEntry6;
   struct hna_entry *h;
-  struct olsr_timer_entry *RouterElectionTimer;
-  struct olsr_timer_info *RouterElectionTimer_cookie = NULL;
+  struct olsr_cookie_info *RouterElectionTimerCookie = NULL;
+
+  RouterElectionTimerCookie = olsr_alloc_cookie("Router Election", OLSR_COOKIE_TYPE_TIMER);
 
   listbackport_init_head(&ListOfRouter);
   listbackport_init_head(&ROUTER_ID);
   listbackport_init_head(&ROUTER_ID6);
-
-  ISMASTER = 1;
 
   OLSR_FOR_ALL_HNA_ENTRIES(h){
     if(olsr_cnf->ip_version == AF_INET){
@@ -169,11 +170,8 @@ int InitRouterList(){
     }
   } OLSR_FOR_ALL_HNA_ENTRIES_END(h);
 
-  RouterElectionTimer_cookie =
-        olsr_timer_add("Router Election Timer", &electTimer, true);
-  RouterElectionTimer =
-        olsr_timer_start(ELECTION_TIMER * MSEC_PER_SEC, ELECTION_JITTER, NULL,
-                         RouterElectionTimer_cookie);
+  olsr_start_timer((unsigned int) ELECTION_TIMER * MSEC_PER_SEC, ELECTION_JITTER, OLSR_TIMER_PERIODIC, electTimer, NULL,
+                   RouterElectionTimerCookie);
 
   return 0;
 }
