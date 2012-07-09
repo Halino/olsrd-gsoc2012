@@ -2,12 +2,14 @@
 
 #define ELECTION_TIMER		30
 #define ELECTION_JITTER		25
+#define HELLO_TIMER		60
+#define HELLO_JITTER		25
 
 struct RtElHelloPkt{
-  char head[3]; //"$REP"
+  char head[4]; //"$REP"
   int ipFamily;
-  char router_id[40];
-  char network_id[40];
+  char router_id[50];
+  char network_id[50];
 } __attribute__((__packed__));
 
 struct RouterListEntry{

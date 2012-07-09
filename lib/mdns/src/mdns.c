@@ -386,11 +386,11 @@ BmfPacketCaptured(
 	if(((u_int8_t) ipHeader->ip_ttl) <= ((u_int8_t) 1))    // Discard mdns packet with TTL limit 1 or less
       		return;
 
-    if (isInFilteredList(&src)) {
+/*    if (isInFilteredList(&src)) {
 
 	return;
     }
-
+*/
   }                             //END IPV4
 
   else if ((encapsulationUdpData[0] & 0xf0) == 0x60) {  //IPv6

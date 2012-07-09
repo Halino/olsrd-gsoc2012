@@ -109,7 +109,38 @@ int UpdateRouterList6 (struct RouterListEntry6 *listEntry6){
   return 0;
 }
 
-void electTimer (void *x __attribute__ ((unused))){
+void helloTimer (void *foo __attribute__ ((unused))){
+
+  struct TBmfInterface *walker;
+  struct RouterListEntry *tmp, *iterator;
+  struct RouterListEntry6 *tmp6, *iterator6;
+  struct RtElHelloPkt *hello;
+  struct sockaddr_in dest;
+
+  for (walker = BmfInterfaces; walker != NULL; walker = walker->next) {
+    if (olsr_cnf->ip_version == AF_INET) {
+      memset((char *) &dest, 0, sizeof(dest));
+      dest.sin_family = AF_INET;
+      dest.sin_addr.s_addr = inet_addr("224.0.0.2");
+      dest.sin_port = htons(5354);
+
+      ROUTER_ID_ENTRIES(tmp, iterator){
+        (void) memset (hello, 0, sizeof(struct RtElHelloPkt));
+        strcpy(hello->head, "$REP");
+        hello->ipFamily = AF_INET;
+        (void) inet_pton(AF_INET, &tmp->router_id, &hello->router_id);
+        (void) inet_pton(AF_INET, &tmp->network_id, &hello->network_id);
+        (void) sendto(walker->helloSkfd, (const char * ) hello, sizeof(hello), 0, (struct sockaddr *)&dest, sizeof(dest));
+      }
+    }
+    else{
+  
+    }
+  }
+  return;
+}
+
+void electTimer (void *foo __attribute__ ((unused))){
 
   struct RouterListEntry *tmp, *iterator, *tmp2, *iterator2;
   struct RouterListEntry6 *tmp6, *iterator6, *tmp62, *iterator62 ;
@@ -148,8 +179,10 @@ int InitRouterList(){
   struct RouterListEntry6 *selfEntry6;
   struct hna_entry *h;
   struct olsr_cookie_info *RouterElectionTimerCookie = NULL;
+  struct olsr_cookie_info *HelloTimerCookie = NULL;
 
   RouterElectionTimerCookie = olsr_alloc_cookie("Router Election", OLSR_COOKIE_TYPE_TIMER);
+  HelloTimerCookie = olsr_alloc_cookie("Hello Packet", OLSR_COOKIE_TYPE_TIMER);
 
   listbackport_init_head(&ListOfRouter);
   listbackport_init_head(&ROUTER_ID);
@@ -170,7 +203,9 @@ int InitRouterList(){
     }
   } OLSR_FOR_ALL_HNA_ENTRIES_END(h);
 
-  olsr_start_timer((unsigned int) ELECTION_TIMER * MSEC_PER_SEC, ELECTION_JITTER, OLSR_TIMER_PERIODIC, electTimer, NULL,
+  olsr_start_timer((unsigned int) HELLO_TIMER * MSEC_PER_SEC, 0, OLSR_TIMER_PERIODIC, helloTimer, NULL,
+		   HelloTimerCookie);
+  olsr_start_timer((unsigned int) ELECTION_TIMER * MSEC_PER_SEC, 0, OLSR_TIMER_PERIODIC, electTimer, NULL,
                    RouterElectionTimerCookie);
 
   return 0;
