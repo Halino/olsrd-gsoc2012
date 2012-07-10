@@ -386,11 +386,15 @@ BmfPacketCaptured(
 	if(((u_int8_t) ipHeader->ip_ttl) <= ((u_int8_t) 1))    // Discard mdns packet with TTL limit 1 or less
       		return;
 
-    if (isInFilteredList(&src)) {
+    if(ISMASTER == 0)             //Don't forward packet if isn't master router
+      return;
+
+
+/*    if (isInFilteredList(&src)) {
 
 	return;
     }
-
+*/
   }                             //END IPV4
 
   else if ((encapsulationUdpData[0] & 0xf0) == 0x60) {  //IPv6
@@ -418,21 +422,22 @@ BmfPacketCaptured(
     if(my_TTL_Check)
     	if(((uint8_t) ipHeader6->ip6_hops) <= ((uint8_t) 1))  // Discard mdns packet with hop limit 1 or less
     		return;
-    
-    if (isInFilteredList(&src)) {
+  
+    if(ISMASTER == 0)             //Don't forward packet if isn't master router
+      return;
+
+  
+/*    if (isInFilteredList(&src)) {
     
     return;
     }
-
+*/
   }                             //END IPV6
   else
     return;                     //Is not IP packet
 
   /* Check if the frame is captured on an OLSR-enabled interface */
   //isFromOlsrIntf = (intf->olsrIntf != NULL); TODO: put again this check
-
-  if(ISMASTER == 0)		//Don't forward packet if isn't master router
-    return;
 
   // send the packet to OLSR forward mechanism
   olsr_mdns_gen(encapsulationUdpData, nBytes);
@@ -534,7 +539,7 @@ CloseMDNS(void)
 void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flags __attribute__ ((unused)))
 {
   static const char * rxBufferPrefix = "$REP";
-  static const size_t rxBufferPrefixLength = 3;
+  static const size_t rxBufferPrefixLength = 4;
   unsigned char rxBuffer[HELLO_BUFFER_SIZE];
   ssize_t rxCount;
   union olsr_sockaddr sender;
@@ -542,6 +547,8 @@ void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flag
   struct RtElHelloPkt *rcvPkt;
   struct RouterListEntry listEntry;
   struct RouterListEntry6 listEntry6;
+
+  OLSR_PRINTF(0,"Packet Received \n");
 
   if (skfd >= 0) {
     memset(&sender, 0, senderSize);
@@ -567,6 +574,7 @@ void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flag
 
   if (rcvPkt->ipFamily == AF_INET){
     if(ParseElectionPacket(rcvPkt, &listEntry)){
+    OLSR_PRINTF(0,"processing ipv4 packet \n");
     (void) UpdateRouterList(&listEntry);
     }
     else

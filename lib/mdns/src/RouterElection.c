@@ -36,37 +36,27 @@
 
 int ENTRYTTL = 120;
 ISMASTER = 1;
-struct list_entity ROUTER_ID;
-struct list_entity ROUTER_ID6;
-#define ROUTER_ID_ENTRIES(n, iterator) listbackport_for_each_element_safe(&ROUTER_ID, n, list, iterator)
-#define ROUTER_ID6_ENTRIES(n6, iterator) listbackport_for_each_element_safe(&ROUTER_ID6, n6, list, iterator)
 
 //List for routers
 struct list_entity ListOfRouter;
 #define ROUTER_ELECTION_ENTRIES(nr, iterator) listbackport_for_each_element_safe(&ListOfRouter, nr, list, iterator)
 
 int ParseElectionPacket (struct RtElHelloPkt *rcvPkt, struct RouterListEntry *listEntry){
-
- (void) memset (&listEntry, 0, sizeof(struct RouterListEntry));
- if(inet_pton( AF_INET, &rcvPkt->router_id, &listEntry->router_id) && 
-			inet_pton( AF_INET, &rcvPkt->network_id, &listEntry->network_id)){
-    listEntry->ttl = ENTRYTTL;
-    return 1;
- }
- else
-   return 0;			//if packet is not valid return 0
+  OLSR_PRINTF(0, "parsing ipv4 packet");
+  listEntry = (struct RouterListEntry *)malloc(sizeof(struct RouterListEntry));
+  listEntry->ttl = ENTRYTTL;
+  listEntry->network_id = rcvPkt->network_id;
+  (void) memcpy(&listEntry->router_id, &rcvPkt->router_id.v4, sizeof(struct in_addr));  //Need to insert an address validity check?
+  return 1;
 }
 
 int ParseElectionPacket6 (struct RtElHelloPkt *rcvPkt, struct RouterListEntry6 *listEntry6){
-
-  (void) memset (&listEntry6, 0, sizeof(struct RouterListEntry6));
-  if(inet_pton( AF_INET6, &rcvPkt->router_id, &listEntry6->router_id) && 
-                         inet_pton( AF_INET6, &rcvPkt->network_id, &listEntry6->network_id)){
-    listEntry6->ttl = ENTRYTTL;
-    return 1;
-  }
-  else
-    return 0;                    //if packet is not valid return 0
+  OLSR_PRINTF(0, "parsing ipv6 packet");
+  listEntry6 = (struct RouterListEntry6 *)malloc(sizeof(struct RouterListEntry6));
+  listEntry6->ttl = ENTRYTTL;
+  listEntry6->network_id = rcvPkt->network_id;
+  (void) memcpy(&listEntry6->router_id, &rcvPkt->router_id.v6, sizeof(struct in6_addr));//Need to insert an address validity check?
+  return 1;
 }
 
 int UpdateRouterList (struct RouterListEntry *listEntry){
@@ -78,8 +68,8 @@ int UpdateRouterList (struct RouterListEntry *listEntry){
     return 0;
 
   ROUTER_ELECTION_ENTRIES(tmp, iterator) {
-    if((memcmp(&(listEntry->router_id), &(tmp->router_id), sizeof(struct in_addr)) == 0) &&
-		(memcmp(&(listEntry->network_id), &(tmp->network_id), sizeof(struct in_addr)) == 0)){
+    if((tmp->network_id == listEntry->network_id) &&
+		(memcmp(&(listEntry->router_id), &(tmp->router_id), sizeof(struct in_addr)) == 0)){
       exist = 1;
       tmp->ttl = listEntry->ttl;
     }
@@ -98,8 +88,8 @@ int UpdateRouterList6 (struct RouterListEntry6 *listEntry6){
     return 0;
  
   ROUTER_ELECTION_ENTRIES(tmp, iterator) { 
-    if((memcmp(&(listEntry6->router_id), &(tmp->router_id), sizeof(struct in6_addr)) == 0) &&
-              (memcmp(&(listEntry6->network_id), &(tmp->network_id), sizeof(struct in6_addr)) == 0)){
+    if((tmp->network_id == listEntry6->network_id) &&
+              (memcmp(&listEntry6->router_id, &(tmp->router_id), sizeof(struct in6_addr))) == 0){
       exist = 1;
       tmp->ttl = listEntry6->ttl;
     }
@@ -109,68 +99,122 @@ int UpdateRouterList6 (struct RouterListEntry6 *listEntry6){
   return 0;
 }
 
-void electTimer (void *x __attribute__ ((unused))){
+void helloTimer (void *foo __attribute__ ((unused))){
 
-  struct RouterListEntry *tmp, *iterator, *tmp2, *iterator2;
-  struct RouterListEntry6 *tmp6, *iterator6, *tmp62, *iterator62 ;
+  struct TBmfInterface *walker;
+  struct RtElHelloPkt *hello;
+  struct sockaddr_in dest;
+  char hd[] = "$REP";
+  OLSR_PRINTF(0,"hello start \n");
+
+  for (walker = BmfInterfaces; walker != NULL; walker = walker->next) {
+    if (olsr_cnf->ip_version == AF_INET) {
+      memset((char *) &dest, 0, sizeof(dest));
+      dest.sin_family = AF_INET;
+      dest.sin_addr.s_addr = inet_addr("224.0.0.2");
+      dest.sin_port = htons(5354);
+
+      OLSR_PRINTF(0,"hello running \n");
+
+      hello = (struct RtElHelloPkt *) malloc(sizeof(struct RtElHelloPkt));
+      OLSR_PRINTF(0,"hello running step 1\n");
+      strcpy(hello->head, hd);
+      hello->ipFamily = AF_INET;
+      hello->network_id = NETWORK_ID;
+      OLSR_PRINTF(0,"hello running step 2\n");
+      memcpy(&hello->router_id, &ROUTER_ID, sizeof(union olsr_ip_addr));
+      OLSR_PRINTF(0,"%i \n", sendto(walker->helloSkfd, (const char * ) hello, 
+			sizeof(struct RtElHelloPkt), 0, (struct sockaddr *)&dest, sizeof(dest)));
+      free(hello);
+    }
+    else{
+  
+    }
+  }
+  return;
+}
+
+void electTimer (void *foo __attribute__ ((unused))){
+
+  struct RouterListEntry *tmp, *iterator;
+  struct RouterListEntry6 *tmp6, *iterator6;
+
+  OLSR_PRINTF(0,"elect start \n");
 
   if (listbackport_is_empty(&ListOfRouter)){
     ISMASTER = 1;
+    OLSR_PRINTF(0,"elect empty \n");
     return;
   }
 
   ISMASTER = 1;
   if (olsr_cnf->ip_version == AF_INET) {
     ROUTER_ELECTION_ENTRIES(tmp, iterator){
-      ROUTER_ID_ENTRIES(tmp2, iterator2){
-        if(memcmp(&tmp->network_id.s_addr, &tmp2->network_id.s_addr, sizeof(unsigned long)) == 0)
-          if(memcmp(&tmp->router_id.s_addr, &tmp2->router_id.s_addr, sizeof(unsigned long)) < 0)
-            ISMASTER = 0;
+      if(NETWORK_ID == tmp->network_id)
+        if(memcmp(&tmp->router_id, &ROUTER_ID.v4, sizeof(struct in_addr)) < 0)
+          ISMASTER = 0;
+      tmp->ttl = (tmp->ttl)--;
+      if(tmp->ttl <= 0){
+        listbackport_remove(tmp);
+        free(tmp);
       }
     }
   }
   else{
     ROUTER_ELECTION_ENTRIES(tmp6, iterator6){
-      ROUTER_ID_ENTRIES(tmp62, iterator62){
-        if(memcmp(&tmp6->network_id, &tmp62->network_id, sizeof(struct in6_addr)) == 0)
-          if(memcmp(&tmp6->router_id, &tmp62->router_id, sizeof(struct in6_addr)) < 0)
-            ISMASTER = 0;
+      if(NETWORK_ID == tmp6->network_id)
+        if(memcmp(&tmp6->router_id, &ROUTER_ID.v6, sizeof(struct in6_addr)) < 0)
+          ISMASTER = 0;
+      tmp6->ttl = (tmp6->ttl)--;
+      if(tmp6->ttl <= 0){
+        listbackport_remove(tmp6);
+      free(tmp6);
       }
     }
   }
 
- return;
+  OLSR_PRINTF(0,"elect finish \n");
+
+  return;
 }
+
+void initTimer (void *foo __attribute__ ((unused))){
+  listbackport_init_head(&ListOfRouter);
+
+  NETWORK_ID = ((uint8_t) 1);             //Default Network id
+
+  OLSR_PRINTF(0,"Initialization \n");
+  (void) memset (&ROUTER_ID, 0, sizeof(union olsr_ip_addr));
+  memcpy(&olsr_cnf->main_addr, &ROUTER_ID, sizeof(union olsr_ip_addr));
+  OLSR_PRINTF(0,"Initialization end \n");
+  return;
+}
+
+int
+set_Network_ID(const char *Network_ID, void *data __attribute__ ((unused)), set_plugin_parameter_addon addon __attribute__ ((unused)))
+{
+  int temp;
+  assert(Network_ID!= NULL);
+  set_plugin_int(Network_ID, &temp, addon);
+  NETWORK_ID = (uint8_t) temp;
+} /* Set Network ID */
+
 
 int InitRouterList(){
 
-  struct RouterListEntry *selfEntry;
-  struct RouterListEntry6 *selfEntry6;
-  struct hna_entry *h;
   struct olsr_cookie_info *RouterElectionTimerCookie = NULL;
+  struct olsr_cookie_info *HelloTimerCookie = NULL;
+  struct olsr_cookie_info *InitCookie = NULL;
 
   RouterElectionTimerCookie = olsr_alloc_cookie("Router Election", OLSR_COOKIE_TYPE_TIMER);
+  HelloTimerCookie = olsr_alloc_cookie("Hello Packet", OLSR_COOKIE_TYPE_TIMER);
+  InitCookie = olsr_alloc_cookie("Init", OLSR_COOKIE_TYPE_TIMER);
 
-  listbackport_init_head(&ListOfRouter);
-  listbackport_init_head(&ROUTER_ID);
-  listbackport_init_head(&ROUTER_ID6);
-
-  OLSR_FOR_ALL_HNA_ENTRIES(h){
-    if(olsr_cnf->ip_version == AF_INET){
-      (void) memset (selfEntry, 0, sizeof(struct RouterListEntry));
-      memcpy(&h->networks.hna_prefix.prefix.v4, &selfEntry->network_id, sizeof(struct in_addr));
-      memcpy(&h->A_gateway_addr.v4, &selfEntry->router_id, sizeof(struct in_addr));
-      listbackport_add_tail(&ROUTER_ID, &selfEntry->list);
-    }
-    else{
-    (void) memset (selfEntry6, 0, sizeof(struct RouterListEntry6));
-    memcpy(&h->networks.hna_prefix.prefix.v6, &selfEntry6->network_id, sizeof(struct in6_addr));
-    memcpy(&h->A_gateway_addr.v6, &selfEntry6->router_id, sizeof(struct in6_addr));
-    listbackport_add_tail(&ROUTER_ID6, &selfEntry6->list);
-    }
-  } OLSR_FOR_ALL_HNA_ENTRIES_END(h);
-
-  olsr_start_timer((unsigned int) ELECTION_TIMER * MSEC_PER_SEC, ELECTION_JITTER, OLSR_TIMER_PERIODIC, electTimer, NULL,
+  olsr_start_timer((unsigned int) INIT_TIMER * MSEC_PER_SEC, 0, OLSR_TIMER_ONESHOT, initTimer, NULL,
+		   InitCookie);
+  olsr_start_timer((unsigned int) HELLO_TIMER * MSEC_PER_SEC, 0, OLSR_TIMER_PERIODIC, helloTimer, NULL,
+		   HelloTimerCookie);
+  olsr_start_timer((unsigned int) ELECTION_TIMER * MSEC_PER_SEC, 0, OLSR_TIMER_PERIODIC, electTimer, NULL,
                    RouterElectionTimerCookie);
 
   return 0;

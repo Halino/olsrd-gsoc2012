@@ -333,7 +333,7 @@ static int CreateHelloSocket(const char *ifName) {
 	int txSocket = -1;
 
 	int mcLoopValue = 0;
-	int txTtl = 1;
+	int txTtl = 2;
 
 	memset(&address, 0, sizeof(address));
 	if (olsr_cnf->ip_version == AF_INET) {
