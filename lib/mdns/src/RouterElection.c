@@ -168,7 +168,7 @@ void electTimer (void *foo __attribute__ ((unused))){
       tmp6->ttl = (tmp6->ttl)--;
       if(tmp6->ttl <= 0){
         listbackport_remove(tmp6);
-      free(tmp6);
+        free(tmp6);
       }
     }
   }

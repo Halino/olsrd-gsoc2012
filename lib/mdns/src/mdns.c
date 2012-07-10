@@ -389,7 +389,6 @@ BmfPacketCaptured(
     if(ISMASTER == 0)             //Don't forward packet if isn't master router
       return;
 
-
 /*    if (isInFilteredList(&src)) {
 
 	return;
