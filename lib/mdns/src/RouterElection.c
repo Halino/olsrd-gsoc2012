@@ -64,7 +64,7 @@ int ParseElectionPacket6 (struct RtElHelloPkt *rcvPkt, struct RouterListEntry6 *
 int UpdateRouterList (struct RouterListEntry *listEntry){
 
   struct RouterListEntry *tmp, *iterator;
-  int exist = 0;
+  int exist = 0, status = 0;
 
   if (olsr_cnf->ip_version == AF_INET6)		//mdns plugin is running in ipv4, discard ipv6
     return 0;
@@ -75,17 +75,18 @@ int UpdateRouterList (struct RouterListEntry *listEntry){
 		(memcmp(&listEntry->router_id, &tmp->router_id, sizeof(struct in_addr)) == 0)){
       exist = 1;
       tmp->ttl = listEntry->ttl;
+      status = 1;
     }
   }
     if (exist == 0)
       listbackport_add_tail(&ListOfRouter, &(listEntry->list));
-  return 0;
+  return status;
 }
 
 int UpdateRouterList6 (struct RouterListEntry6 *listEntry6){
 
   struct RouterListEntry6 *tmp, *iterator;
-  int exist = 0;
+  int exist = 0, status = 0;
 
   if (olsr_cnf->ip_version == AF_INET)		//mdns plugin is running in ipv6, discard ipv4
     return 0;
@@ -95,11 +96,12 @@ int UpdateRouterList6 (struct RouterListEntry6 *listEntry6){
               (memcmp(&listEntry6->router_id, &tmp->router_id, sizeof(struct in6_addr))) == 0){
       exist = 1;
       tmp->ttl = listEntry6->ttl;
+      status = 1;
     }
   }
     if (exist == 0)
       listbackport_add_tail(&ListOfRouter, &(listEntry6->list));
-  return 0;
+  return status;
 }
 
 void helloTimer (void *foo __attribute__ ((unused))){

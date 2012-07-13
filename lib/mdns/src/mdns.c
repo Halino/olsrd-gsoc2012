@@ -576,7 +576,8 @@ void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flag
     listEntry = (struct RouterListEntry *)malloc(sizeof(struct RouterListEntry));
     if(ParseElectionPacket(rcvPkt, listEntry)){
       OLSR_PRINTF(1,"processing ipv4 packet \n");
-      (void) UpdateRouterList(listEntry);
+      if(UpdateRouterList(listEntry))
+        free(listEntry);
     }
     else{
       free(listEntry);
@@ -587,7 +588,8 @@ void DoElection(int skfd, void *data __attribute__ ((unused)), unsigned int flag
     listEntry6 = (struct RouterListEntry6 *)malloc(sizeof(struct RouterListEntry6));
     if(ParseElectionPacket6(rcvPkt, listEntry6)){
       OLSR_PRINTF(1,"processing ipv6 packet");
-      (void) UpdateRouterList6(listEntry6);
+      if(UpdateRouterList6(listEntry6))
+        free(listEntry6);
     }
     else{
       free(listEntry6);
