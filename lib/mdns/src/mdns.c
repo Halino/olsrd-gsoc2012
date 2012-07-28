@@ -392,6 +392,9 @@ isInFilteredList(union olsr_ip_addr *src){//TODO: implement here check if IP is 
 
   struct FilteredHost *tmp, *iterator;
 
+  if(listbackport_is_empty(&ListOfFilteredHosts))
+    return 0;
+
   OLSR_FOR_ALL_FILTEREDNODES_ENTRIES(tmp, iterator){
     if(olsr_cnf->ip_version == AF_INET){
       if(memcmp(&tmp->host.v4, &src->v4, sizeof(struct in_addr)) == 0)
