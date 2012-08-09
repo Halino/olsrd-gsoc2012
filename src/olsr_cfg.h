@@ -44,6 +44,9 @@
 
 #include "olsr_types.h"
 #include "common/autobuf.h"
+#ifdef HTTPINFO_PUD
+#include "pud/src/receiver.h"
+#endif
 
 /* set to 1 to collect all startup sleep into one sleep
  * (just as long as the longest sleep)
@@ -82,6 +85,10 @@
 #define DEF_GW_STABLE_COUNT  6
 #define DEF_GW_ALLOW_NAT     true
 #define DEF_GW_THRESH        0
+#define DEF_GW_WEIGHT_EXITLINK_UP   1
+#define DEF_GW_WEIGHT_EXITLINK_DOWN 1
+#define DEF_GW_WEIGHT_ETX           1
+#define DEF_GW_DIVIDER_ETX          0
 #define DEF_GW_TYPE          GW_UPLINK_IPV46
 #define DEF_GW_UPLINK_NAT    true
 #define DEF_UPLINK_SPEED     128
@@ -272,6 +279,10 @@ struct olsrd_config {
   uint32_t smart_gw_period;
   uint8_t smart_gw_stablecount;
   uint8_t smart_gw_thresh;
+  uint8_t smart_gw_weight_exitlink_up;
+  uint8_t smart_gw_weight_exitlink_down;
+  uint8_t smart_gw_weight_etx;
+  uint8_t smart_gw_divider_etx;
   enum smart_gw_uplinktype smart_gw_type;
   uint32_t smart_gw_uplink, smart_gw_downlink;
   struct olsr_ip_prefix smart_gw_prefix;
@@ -295,15 +306,19 @@ struct olsrd_config {
   bool has_ipv4_gateway, has_ipv6_gateway;
 
   int ioctl_s;                         /* Socket used for ioctl calls */
-#ifdef LINUX_NETLINK_ROUTING
+#ifdef linux
   int rtnl_s;                          /* Socket used for rtnetlink messages */
   int rt_monitor_socket;
 #endif
 
-#if defined __FreeBSD__ || defined __FreeBSD_kernel__ || defined __MacOSX__ || defined __NetBSD__ || defined __OpenBSD__
+#if defined __FreeBSD__ || defined __FreeBSD_kernel__ || defined __APPLE__ || defined __NetBSD__ || defined __OpenBSD__
   int rts;                             /* Socket used for route changes on BSDs */
 #endif
   float lq_nat_thresh;
+
+#ifdef HTTPINFO_PUD
+  TransmitGpsInformation * pud_position;
+#endif
 };
 
 #if defined __cplusplus

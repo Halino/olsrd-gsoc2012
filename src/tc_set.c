@@ -286,7 +286,7 @@ olsr_delete_tc_entry(struct tc_entry *tc)
 #endif
 
   /* delete gateway if available */
-#ifdef LINUX_NETLINK_ROUTING
+#ifdef linux
   olsr_delete_gateway_entry(&tc->addr, FORCE_DELETE_GW_ENTRY);
 #endif
   /*
@@ -667,7 +667,7 @@ olsr_tc_update_edge(struct tc_entry *tc, uint16_t ansn, const unsigned char **cu
     if (olsr_calc_tc_edge_entry_etx(tc_edge)) {
       edge_change = 1;
     }
-#if DEBUG
+#if defined DEBUG && DEBUG
     if (edge_change) {
       OLSR_PRINTF(1, "TC:   chg edge entry %s\n", olsr_tc_edge_to_string(tc_edge));
     }
@@ -708,7 +708,7 @@ olsr_print_tc_table(void)
 #ifndef NODEBUG
   /* The whole function makes no sense without it. */
   struct tc_entry *tc;
-  const int ipwidth = olsr_cnf->ip_version == AF_INET ? 15 : 30;
+  const int ipwidth = olsr_cnf->ip_version == AF_INET ? 15 : 39;
 
   OLSR_PRINTF(1, "\n--- %s ------------------------------------------------- TOPOLOGY\n\n" "%-*s %-*s %-14s  %s\n",
               olsr_wallclock_string(), ipwidth, "Source IP addr", ipwidth, "Dest IP addr", "      LQ      ", "ETX");

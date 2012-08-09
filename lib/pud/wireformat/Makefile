@@ -12,21 +12,18 @@ include $(TOPDIR)/Makefile.inc
 #
 ######################
 
-MACHINE=$(shell uname -m)
-ifeq ($(strip $(MACHINE)),x86_64)
-LIBDIR_INSTALL = usr/lib64
-else
-LIBDIR_INSTALL = usr/lib
-endif
-
+DESTDIR ?=
+USRDIR ?= $(DESTDIR)/usr
+INCLUDEDIR ?= $(DESTDIR)/usr/include
+LIBDIR ?= $(USRDIR)/lib
 
 BUILD_DIR = build
+LIBDIR_BUILD = lib
 
-INC_DIR_BASE_C = include
+
+INC_DIR_BASE_C = ./include
 INC_DIR_C = $(INC_DIR_BASE_C)/$(PROJECT)
 INC_DIR_OLSRD = ../../../src
-
-LIBDIR_BUILD = lib
 
 MODULES = nodeIdConversion wireFormat
 
@@ -36,22 +33,8 @@ OBJECTS_C = $(MODULES:%=$(BUILD_DIR)/%.o)
 INCLUDES = -I "$(INC_DIR_BASE_C)" -I "$(INC_DIR_OLSRD)"
 LIBRARIES = -lm
 
-DESTDIR ?=
-INC_DIR_INSTALL = usr/$(INC_DIR_C)
 
-
-ifneq ($(OS),linux)
-
-.PHONY: all default_target install clean
-
-all: default_target
-
-default_target install clean:
-	@echo "*** only supported on Linux"
-
-else
-
-.PHONY: all default_target prepare clean doc doc-clean install uninstall
+.PHONY: all default_target prepare clean doc doc-clean install install-headers uninstall uninstall-headers
 
 #
 # Targets
@@ -94,20 +77,24 @@ doc-clean:
 	@$(MAKE) -C doc clean
 
 install: all
-	rm -fr "$(DESTDIR)/$(INC_DIR_INSTALL)"
-	mkdir -v -p "$(DESTDIR)/$(LIBDIR_INSTALL)" "$(DESTDIR)/$(INC_DIR_INSTALL)"
-	cp "$(LIBDIR_BUILD)/$(SONAME)" "$(DESTDIR)/$(LIBDIR_INSTALL)/$(SONAME).$(PLUGIN_VER)"
-	$(STRIP) "$(DESTDIR)/$(LIBDIR_INSTALL)/$(SONAME).$(PLUGIN_VER)"
-	ldconfig -n "$(DESTDIR)/$(LIBDIR_INSTALL)"
-	cp -t "$(DESTDIR)/$(INC_DIR_INSTALL)" $(INC_DIR_C)/*.h
+	mkdir -v -p "$(LIBDIR)"
+	cp "$(LIBDIR_BUILD)/$(SONAME)" "$(LIBDIR)/$(SONAME).$(PLUGIN_VER)"
+	$(STRIP) "$(LIBDIR)/$(SONAME).$(PLUGIN_VER)"
+	/sbin/ldconfig -n "$(LIBDIR)"
+
+install-headers:
+	rm -fr "$(INCLUDEDIR)/$(PROJECT)"
+	mkdir -v -p "$(INCLUDEDIR)/$(PROJECT)"
+	cp -t "$(INCLUDEDIR)/$(PROJECT)" $(INC_DIR_C)/*.h
 
 uninstall:
-	rm -fr "$(DESTDIR)/$(INC_DIR_INSTALL)/"*.h
-	rm -f "$(DESTDIR)/$(LIBDIR_INSTALL)/$(SONAME)" \
-	      "$(DESTDIR)/$(LIBDIR_INSTALL)/$(SONAME).$(PLUGIN_VER)"
-	ldconfig -n "$(DESTDIR)/$(LIBDIR_INSTALL)"
+	rm -f "$(LIBDIR)/$(SONAME)" \
+	      "$(LIBDIR)/$(SONAME).$(PLUGIN_VER)"
+	/sbin/ldconfig -n "$(LIBDIR)"
 	rmdir -v -p --ignore-fail-on-non-empty \
-	  "$(DESTDIR)/$(LIBDIR_INSTALL)" \
-	  "$(DESTDIR)/$(INC_DIR_INSTALL)"
+	  "$(LIBDIR)"
 
-endif
+uninstall-headers:
+	rm -fr "$(INCLUDEDIR)/$(PROJECT)/"*.h
+	rmdir -v -p --ignore-fail-on-non-empty \
+	  "$(INCLUDEDIR)/$(PROJECT)"

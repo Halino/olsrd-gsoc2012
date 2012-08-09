@@ -237,7 +237,7 @@ net_os_set_global_ifoptions(void) {
       snprintf(procfile, sizeof(procfile), PROC_IF_SPOOF, TUNNEL_ENDPOINT_IF);
       if (writeToProc(procfile, &orig_tunnel_rp_filter, OLSRD_SPOOF_VALUE)) {
         OLSR_PRINTF(0, "WARNING! Could not disable the IP spoof filter for tunnel!\n"
-            "you should mannually ensure that IP spoof filtering is disabled!\n\n");
+            "you should manually ensure that IP spoof filtering is disabled!\n\n");
 
         olsr_startup_sleep(3);
       }
@@ -248,7 +248,7 @@ net_os_set_global_ifoptions(void) {
       snprintf(procfile, sizeof(procfile), PROC_IF_SPOOF, TUNNEL_ENDPOINT_IF6);
       if (writeToProc(procfile, &orig_tunnel6_rp_filter, OLSRD_SPOOF_VALUE)) {
         OLSR_PRINTF(0, "WARNING! Could not disable the IP spoof filter for tunnel6!\n"
-            "you should mannually ensure that IP spoof filtering is disabled!\n\n");
+            "you should manually ensure that IP spoof filtering is disabled!\n\n");
 
         olsr_startup_sleep(3);
       }
@@ -293,7 +293,7 @@ net_os_set_ifoptions(const char *if_name, struct interface *iface)
 
   if (writeToProc(procfile, &iface->nic_state.redirect, OLSRD_REDIRECT_VALUE)) {
     OLSR_PRINTF(0, "WARNING! Could not disable ICMP redirects!\n"
-        "you should mannually ensure that ICMP redirects are disabled!\n\n");
+        "you should manually ensure that ICMP redirects are disabled!\n\n");
     olsr_startup_sleep(3);
     return 0;
   }
@@ -303,7 +303,7 @@ net_os_set_ifoptions(const char *if_name, struct interface *iface)
 
   if (writeToProc(procfile, &iface->nic_state.spoof, OLSRD_SPOOF_VALUE)) {
     OLSR_PRINTF(0, "WARNING! Could not disable the IP spoof filter!\n"
-        "you should mannually ensure that IP spoof filtering is disabled!\n\n");
+        "you should manually ensure that IP spoof filtering is disabled!\n\n");
 
     olsr_startup_sleep(3);
     return 0;
@@ -609,7 +609,7 @@ join_mcast(struct interface *ifs, int sock)
   mcastreq.ipv6mr_multiaddr = ifs->int6_multaddr.sin6_addr;
   mcastreq.ipv6mr_interface = ifs->if_index;
 
-#if !defined __FreeBSD__ && !defined __FreeBSD_kernel__ && !defined __MacOSX__ && !defined __NetBSD__
+#if !defined __FreeBSD__ && !defined __FreeBSD_kernel__ && !defined __APPLE__ && !defined __NetBSD__
   OLSR_PRINTF(3, "Interface %s joining multicast %s...", ifs->int_name, ip6_to_string(&buf, &ifs->int6_multaddr.sin6_addr));
   /* Send multicast */
   if (setsockopt(sock, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char *)&mcastreq, sizeof(struct ipv6_mreq)) < 0) {

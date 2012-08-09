@@ -63,6 +63,12 @@
 #include "ipcalc.h"
 #include "lq_plugin.h"
 #include "common/autobuf.h"
+#ifdef HTTPINFO_PUD
+  #include <pud/src/receiver.h>
+  #include <pud/src/pud.h>
+  #include <nmea/info.h>
+  #include <nmea/sentence.h>
+#endif
 
 #include "olsrd_httpinfo.h"
 #include "admin_interface.h"
@@ -178,6 +184,10 @@ static void build_nodes_body(struct autobuf *);
 
 static void build_all_body(struct autobuf *);
 
+#ifdef HTTPINFO_PUD
+static void build_pud_body(struct autobuf *);
+#endif
+
 static void build_about_body(struct autobuf *);
 
 static void build_cfgfile_body(struct autobuf *);
@@ -216,6 +226,9 @@ static const struct tab_entry tab_entries[] = {
   {"Configuration", "config", build_config_body, true},
   {"Routes", "routes", build_routes_body, true},
   {"Links/Topology", "nodes", build_nodes_body, true},
+#ifdef HTTPINFO_PUD
+  {"Position", "position", build_pud_body, true},
+#endif
   {"All", "all", build_all_body, true},
 #ifdef ADMIN_INTERFACE
   {"Admin", "admin", build_admin_body, true},
@@ -730,7 +743,7 @@ build_ipaddr_link(struct autobuf *abuf, const bool want_link, const union olsr_i
   struct ipaddr_str ipaddrstr;
   const struct hostent *const hp =
 #ifndef WIN32
-    resolve_ip_addresses ? gethostbyaddr(ipaddr, olsr_cnf->ipsize,
+    resolve_ip_addresses ? gethostbyaddr((const void *)ipaddr, olsr_cnf->ipsize,
                                          olsr_cnf->ip_version) :
 #endif
     NULL;
@@ -854,10 +867,10 @@ build_config_body(struct autobuf *abuf)
 
   abuf_puts(abuf, "</tr>\n<tr>\n");
 
-  abuf_appendf(abuf, "<td>Pollrate: %0.2f</td>\n", olsr_cnf->pollrate);
+  abuf_appendf(abuf, "<td>Pollrate: %0.2f</td>\n", (double)olsr_cnf->pollrate);
   abuf_appendf(abuf, "<td>TC redundancy: %d</td>\n", olsr_cnf->tc_redundancy);
   abuf_appendf(abuf, "<td>MPR coverage: %d</td>\n", olsr_cnf->mpr_coverage);
-  abuf_appendf(abuf, "<td>NAT threshold: %f</td>\n", olsr_cnf->lq_nat_thresh);
+  abuf_appendf(abuf, "<td>NAT threshold: %f</td>\n", (double)olsr_cnf->lq_nat_thresh);
 
   abuf_puts(abuf, "</tr>\n<tr>\n");
 
@@ -875,9 +888,9 @@ build_config_body(struct autobuf *abuf)
     abuf_appendf(abuf, "</tr>\n<tr>\n" "<td>Hysteresis: %s</td>\n",
                olsr_cnf->use_hysteresis ? "Enabled" : "Disabled");
     if (olsr_cnf->use_hysteresis) {
-      abuf_appendf(abuf, "<td>Hyst scaling: %0.2f</td>\n", olsr_cnf->hysteresis_param.scaling);
-      abuf_appendf(abuf, "<td>Hyst lower/upper: %0.2f/%0.2f</td>\n", olsr_cnf->hysteresis_param.thr_low,
-                 olsr_cnf->hysteresis_param.thr_high);
+      abuf_appendf(abuf, "<td>Hyst scaling: %0.2f</td>\n", (double)olsr_cnf->hysteresis_param.scaling);
+      abuf_appendf(abuf, "<td>Hyst lower/upper: %0.2f/%0.2f</td>\n", (double)olsr_cnf->hysteresis_param.thr_low,
+    		  (double)olsr_cnf->hysteresis_param.thr_high);
     }
   }
 
@@ -885,7 +898,7 @@ build_config_body(struct autobuf *abuf)
              olsr_cnf->lq_level ? "Enabled" : "Disabled");
   if (olsr_cnf->lq_level) {
     abuf_appendf(abuf, "<td>LQ level: %d</td>\n" "<td>LQ aging: %f</td>\n", olsr_cnf->lq_level,
-               olsr_cnf->lq_aging);
+    		(double)olsr_cnf->lq_aging);
   }
   abuf_puts(abuf, "</tr></table>\n");
 
@@ -967,7 +980,7 @@ build_neigh_body(struct autobuf *abuf)
     abuf_puts(abuf, "<tr>");
     build_ipaddr_with_link(abuf, &the_link->local_iface_addr, -1);
     build_ipaddr_with_link(abuf, &the_link->neighbor_iface_addr, -1);
-    abuf_appendf(abuf, "<td>%0.2f</td>", the_link->L_link_quality);
+    abuf_appendf(abuf, "<td>%0.2f</td>", (double)the_link->L_link_quality);
     if (olsr_cnf->lq_level > 0) {
       struct lqtextbuffer lqbuffer1, lqbuffer2;
       abuf_appendf(abuf, "<td>(%s) %s</td>", get_link_entry_text(the_link, '/', &lqbuffer1),
@@ -1087,7 +1100,350 @@ build_all_body(struct autobuf *abuf)
   build_neigh_body(abuf);
   build_topo_body(abuf);
   build_mid_body(abuf);
+#ifdef HTTPINFO_PUD
+  build_pud_body(abuf);
+#endif
 }
+
+#ifdef HTTPINFO_PUD
+/**
+ * Determine if a nmeaINFO structure has a certain field.
+ * We need this function locally because nmealib might not be loaded.
+ *
+ * @param present the presence field
+ * @param fieldName use a name from nmeaINFO_FIELD
+ * @return a boolean, true when the structure has the requested field
+ */
+static inline bool nmea_INFO_has_field_local(uint32_t present, nmeaINFO_FIELD fieldName) {
+	return ((present & fieldName) != 0);
+}
+
+static const char * NA_STRING = "N.A.";
+
+static void build_pud_body(struct autobuf *abuf) {
+	TransmitGpsInformation * txGpsInfo = olsr_cnf->pud_position;
+	char * nodeId;
+	char nodeIdString[256];
+	bool datePresent;
+	bool timePresent;
+
+	abuf_puts(abuf, "<h2>Position</h2>");
+
+	if (!txGpsInfo) {
+		abuf_puts(abuf, "<p><b>" PUD_PLUGIN_ABBR " plugin not loaded</b></p>\n");
+		return;
+	}
+
+	nodeId = (char *) txGpsInfo->nodeId;
+
+	if (!nodeId || !strlen(nodeId)) {
+		inet_ntop(olsr_cnf->ip_version, &olsr_cnf->main_addr, &nodeIdString[0], sizeof(nodeIdString));
+		nodeId = nodeIdString;
+	}
+
+	/* start of table */
+	abuf_puts(abuf,
+		"<p><table border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\n"
+		"<tr><th>Parameter</th><th>&nbsp;&nbsp;</th><th>Unit</th><th>&nbsp;&nbsp;</th><th>Value</th></tr>\n"
+	);
+
+	/* nodeId */
+	abuf_appendf(abuf,
+		"<tr><td>Name</td><td></td><td></td><td></td><td id=\"nodeId\">%s</td></tr>\n",
+		nodeId
+	);
+
+	/* utc */
+	abuf_puts(abuf, "<tr><td>Date / Time</td><td></td><td>UTC</td><td></td><td id=\"utc\">");
+	datePresent = nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, UTCDATE);
+	timePresent = nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, UTCTIME);
+	if (datePresent || timePresent) {
+		if (datePresent) {
+			abuf_appendf(abuf, "%04d%02d%02d",
+				txGpsInfo->txPosition.nmeaInfo.utc.year + 1900,
+				txGpsInfo->txPosition.nmeaInfo.utc.mon,
+				txGpsInfo->txPosition.nmeaInfo.utc.day);
+		}
+		if (datePresent && timePresent) {
+			abuf_puts(abuf, " ");
+		}
+		if (timePresent) {
+			abuf_appendf(abuf, "%02d:%02d:%02d.%02d",
+				txGpsInfo->txPosition.nmeaInfo.utc.hour,
+				txGpsInfo->txPosition.nmeaInfo.utc.min,
+				txGpsInfo->txPosition.nmeaInfo.utc.sec,
+				txGpsInfo->txPosition.nmeaInfo.utc.hsec);
+		}
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* smask */
+	abuf_puts(abuf, "<tr><td>Input Sentences</td><td></td><td></td><td></td><td id=\"smask\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, SMASK)
+			&& (txGpsInfo->txPosition.nmeaInfo.smask != GPNON)) {
+		const int id[] = { GPGGA, GPGSA, GPGSV, GPRMC, GPVTG, GPNON };
+		const char * ids[] = { "GPGGA", "GPGSA", "GPGSV", "GPRMC", "GPVTG" };
+		bool printed = false;
+		int i = 0;
+
+		while (id[i] != GPNON) {
+			if (txGpsInfo->txPosition.nmeaInfo.smask & id[i]) {
+				if (printed)
+					abuf_puts(abuf, "&nbsp;");
+				abuf_puts(abuf, ids[i]);
+				printed = true;
+			}
+			i++;
+		}
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* sig */
+	abuf_puts(abuf, "<tr><td>Signal Strength</td><td></td><td></td><td></td><td id=\"sig\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, SIG)) {
+		const char * s;
+		switch (txGpsInfo->txPosition.nmeaInfo.sig) {
+			case NMEA_SIG_BAD:
+				s = "Invalid";
+				break;
+			case NMEA_SIG_LOW:
+				s = "Fix";
+				break;
+			case NMEA_SIG_MID:
+				s = "Differential";
+				break;
+			case NMEA_SIG_HIGH:
+				s = "Sensitive";
+				break;
+			case NMEA_SIG_RTKIN:
+				s = "Real Time Kinematic";
+				break;
+			case NMEA_SIG_FLRTK:
+				s = "Float RTK";
+				break;
+			case NMEA_SIG_ESTIM:
+				s = "Estimated (Dead Reckoning)";
+				break;
+			case NMEA_SIG_MAN:
+				s = "Manual Input Mode";
+				break;
+			case NMEA_SIG_SIM:
+				s = "Simulation Mode";
+				break;
+			default:
+				s = "Unknown";
+				break;
+		}
+		abuf_appendf(abuf, "%s (%d)", s, txGpsInfo->txPosition.nmeaInfo.sig);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* fix */
+	abuf_puts(abuf, "<tr><td>Fix</td><td></td><td></td><td></td><td id=\"fix\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, FIX)) {
+		const char * s;
+		switch (txGpsInfo->txPosition.nmeaInfo.fix) {
+			case NMEA_FIX_BAD:
+				s = "BAD";
+				break;
+			case NMEA_FIX_2D:
+				s = "2D";
+				break;
+			case NMEA_FIX_3D:
+				s = "3D";
+				break;
+			default:
+				s = "Unknown";
+				break;
+		}
+		abuf_appendf(abuf, "%s (%d)", s, txGpsInfo->txPosition.nmeaInfo.fix);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* PDOP */
+	abuf_puts(abuf, "<tr><td>PDOP</td><td></td><td></td><td></td><td id=\"pdop\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, PDOP)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.PDOP);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* HDOP */
+	abuf_puts(abuf, "<tr><td>HDOP</td><td></td><td></td><td></td><td id=\"hdop\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, HDOP)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.HDOP);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* VDOP */
+	abuf_puts(abuf, "<tr><td>VDOP</td><td></td><td></td><td></td><td id=\"vdop\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, VDOP)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.VDOP);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* lat */
+	abuf_puts(abuf, "<tr><td>Latitude</td><td></td><td>degrees</td><td></td><td id=\"lat\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, LAT)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.lat);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* lon */
+	abuf_puts(abuf, "<tr><td>Longitude</td><td></td><td>degrees</td><td></td><td id=\"lon\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, LON)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.lon);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* elv */
+	abuf_puts(abuf, "<tr><td>Elevation</td><td></td><td>m</td><td></td><td id=\"elv\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, ELV)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.elv);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* speed */
+	abuf_puts(abuf, "<tr><td>Speed</td><td></td><td>kph</td><td></td><td id=\"speed\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, SPEED)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.speed);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* track */
+	abuf_puts(abuf, "<tr><td>Track</td><td></td><td>degrees</td><td></td><td id=\"track\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, TRACK)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.track);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* mtrack */
+	abuf_puts(abuf, "<tr><td>Magnetic Track</td><td></td><td>degrees</td><td></td><td id=\"mtrack\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, MTRACK)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.mtrack);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* magvar */
+	abuf_puts(abuf, "<tr><td>Magnetic Variation</td><td></td><td>degrees</td><td></td><td id=\"magvar\">");
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, MAGVAR)) {
+		abuf_appendf(abuf, "%f", txGpsInfo->txPosition.nmeaInfo.magvar);
+	} else {
+		abuf_puts(abuf, NA_STRING);
+	}
+	abuf_puts(abuf, "</td></tr>\n");
+
+	/* end of table */
+	abuf_puts(abuf, "</table></p>\n");
+
+	/* sats */
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, SATINVIEW)) {
+		int cnt = 0;
+
+		abuf_puts(abuf, "<p>\n");
+		abuf_puts(abuf, "Satellite Infomation:\n");
+		abuf_puts(abuf, "<table border=\"1\" cellpadding=\"2\" cellspacing=\"0\" id=\"satinfo\">\n");
+		abuf_puts(abuf, "<tbody align=\"center\">\n");
+		abuf_puts(abuf,
+				"<tr><th>ID</th><th>In Use</th><th>Elevation (degrees)</th><th>Azimuth (degrees)</th><th>Signal (dB)</th></tr>\n");
+
+		if (txGpsInfo->txPosition.nmeaInfo.satinfo.inview) {
+			int satIndex;
+			for (satIndex = 0; satIndex < NMEA_MAXSAT; satIndex++) {
+				nmeaSATELLITE * sat = &txGpsInfo->txPosition.nmeaInfo.satinfo.sat[satIndex];
+				if (sat->id) {
+					const char * inuseStr;
+
+					if (!nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, SATINUSE)) {
+						inuseStr = NA_STRING;
+					} else {
+						int inuseIndex;
+						bool inuse = false;
+						for (inuseIndex = 0; inuseIndex < NMEA_MAXSAT; inuseIndex++) {
+							if (txGpsInfo->txPosition.nmeaInfo.satinfo.in_use[inuseIndex] == sat->id) {
+								inuse = true;
+								break;
+							}
+						}
+						if (inuse) {
+							inuseStr = "yes";
+						} else {
+							inuseStr = "no";
+						}
+					}
+
+					abuf_appendf(abuf, "<tr><td>%02d</td><td>%s</td><td>%02d</td><td>%03d</td><td>%02d</td></tr>\n",
+							sat->id, inuseStr, sat->elv, sat->azimuth, sat->sig);
+					cnt++;
+				}
+			}
+		}
+
+		if (!cnt) {
+			abuf_puts(abuf, "<tr><td colspan=\"5\">none</td></tr>\n");
+		}
+
+		abuf_puts(abuf, "</tbody></table>\n");
+		abuf_puts(abuf, "</p>\n");
+	}
+
+	/* add Google Maps and OpenStreetMap links when we have both lat and lon */
+	if (nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, LAT)
+			&& nmea_INFO_has_field_local(txGpsInfo->txPosition.nmeaInfo.present, LON)) {
+		const char * c = nodeId;
+
+		abuf_appendf(abuf,
+			"<p>\n"
+			"<a href=\"http://maps.google.com/maps?q=%f,+%f+%%28",
+			txGpsInfo->txPosition.nmeaInfo.lat,
+			txGpsInfo->txPosition.nmeaInfo.lon
+		);
+
+		while (*c != '\0') {
+			if (*c == ' ' || *c == '\t') {
+				abuf_puts(abuf, "+");
+			} else {
+				abuf_appendf(abuf, "%c", *c);
+			}
+			c++;
+		}
+
+		abuf_puts(abuf, "%29&amp;iwloc=A\">Show on Google Maps</a></p>\n");
+
+		abuf_appendf(abuf,
+			"<p>\n"
+			"<a href=\"http://www.openstreetmap.org/index.html?mlat=%f&amp;mlon=%f&amp;zoom=15&amp;layers=M\">Show on OpenStreetMap</a></p>\n",
+			txGpsInfo->txPosition.nmeaInfo.lat,
+			txGpsInfo->txPosition.nmeaInfo.lon
+		);
+	}
+}
+#endif
 
 static void
 build_about_body(struct autobuf *abuf)
